@@ -1,5 +1,9 @@
+import pytest
+
+from how_agents_work.agent import Agent
 from how_agents_work.main import build_agent
-from how_agents_work.models import AgentTask
+from how_agents_work.models import AgentTask, Decision
+from how_agents_work.tools import ToolRegistry
 
 
 def test_delayed_order_is_escalated() -> None:
@@ -30,3 +34,23 @@ def test_wrong_customer_fails_without_guessing() -> None:
 
     assert not result.success
     assert "could not be verified" in result.message
+
+
+def test_agent_stops_at_the_step_limit() -> None:
+    class NoProgressPlanner:
+        def decide(self, state):
+            return Decision(action="tool", tool_name="unknown")
+
+    result = Agent(NoProgressPlanner(), ToolRegistry([]), max_steps=2)
+
+    assert not result.success
+    assert "stopped after 2 steps" in result.message
+
+
+def test_invalid_step_limit_is_rejected() -> None:
+    class NoProgressPlanner:
+        def decide(self, state):
+            return Decision(action="tool", tool_name="unknown")
+
+    with pytest.raises(ValueError, match="max_steps"):
+        Agent(NoProgressPlanner(), ToolRegistry([]), max_steps=0)

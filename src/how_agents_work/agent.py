@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from .models import AgentResult, AgentState, AgentTask, TraceEntry
+from .models import AgentResult, AgentState, AgentTask, Observation, TraceEntry
 from .planner import SupportPlanner
 from .tools import ToolRegistry
 
@@ -42,24 +42,30 @@ class Agent:
                 state.add(observation)
 
                 trace.append(
-                    TraceEntry(step, "observation", self._format_observation(observation))
+                    TraceEntry(
+                        step,
+                        "observation",
+                        self._format_observation(observation),
+                    )
                 )
                 continue
 
             if decision.action == "finish":
-                trace.append(TraceEntry(step, "finish", decision.message or "done"))
+                message = decision.message or "done"
+                trace.append(TraceEntry(step, "finish", message))
                 return AgentResult(
                     True,
-                    decision.message or "done",
+                    message,
                     tuple(trace),
                     tuple(state.observations),
                 )
 
             if decision.action == "fail":
-                trace.append(TraceEntry(step, "fail", decision.message or "failed"))
+                message = decision.message or "failed"
+                trace.append(TraceEntry(step, "fail", message))
                 return AgentResult(
                     False,
-                    decision.message or "failed",
+                    message,
                     tuple(trace),
                     tuple(state.observations),
                 )
@@ -81,7 +87,7 @@ class Agent:
         return ", ".join(f"{key}={value}" for key, value in arguments.items())
 
     @staticmethod
-    def _format_observation(observation) -> str:
+    def _format_observation(observation: Observation) -> str:
         if not observation.success:
             return f"{observation.source}: error={observation.error}"
 
