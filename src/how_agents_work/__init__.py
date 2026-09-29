@@ -1,4 +1,4 @@
-"""A small, deterministic agent example."""
+"""A small deterministic example of an agent runtime."""
 
 from .agent import Agent
 from .models import AgentResult, AgentTask

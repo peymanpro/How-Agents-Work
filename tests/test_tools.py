@@ -1,20 +1,31 @@
-from how_agents_work.tools import CalculateDelay, GetOrder
+from how_agents_work.data import build_demo_system
+from how_agents_work.tools import CreateEscalation, GetOrder, ToolRegistry
 
 
-def test_get_order_checks_customer_ownership() -> None:
-    tool = GetOrder()
-
-    observation = tool.run({"order_id": "O-1002", "customer_id": "C-03"})
+def test_get_order_rejects_wrong_customer() -> None:
+    observation = GetOrder(build_demo_system()).run(
+        {"order_id": "O-1002", "customer_id": "C-03"}
+    )
 
     assert not observation.success
     assert "does not belong" in (observation.error or "")
 
 
-def test_calculate_delay_reports_lateness() -> None:
-    tool = CalculateDelay()
+def test_create_escalation_is_idempotent() -> None:
+    system = build_demo_system()
+    tool = CreateEscalation(system)
 
-    observation = tool.run({"actual_days": "4", "allowed_days": "2"})
+    first = tool.run({"order_id": "O-1002", "reason": "late"})
+    second = tool.run({"order_id": "O-1002", "reason": "late again"})
 
-    assert observation.success
-    assert observation.values["difference_days"] == "2"
-    assert observation.values["is_late"] == "True"
+    assert first.values["escalation_id"] == "ESC-0001"
+    assert second.values["escalation_id"] == "ESC-0001"
+    assert len(system.escalations) == 1
+
+
+def test_registry_describes_tools() -> None:
+    registry = ToolRegistry([GetOrder(build_demo_system())])
+
+    assert registry.describe() == [
+        "get_order: Look up an order after verifying customer ownership."
+    ]

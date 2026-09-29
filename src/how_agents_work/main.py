@@ -1,42 +1,82 @@
 from .agent import Agent
+from .data import build_demo_system
+from .evaluation import EvaluationCase, evaluate
 from .models import AgentTask
 from .planner import SupportPlanner
-from .tools import CalculateDelay, GetOrder, GetShippingPolicy, ToolRegistry
+from .tools import (
+    CreateEscalation,
+    GetCustomerHistory,
+    GetOrder,
+    GetShippingPolicy,
+    GetTracking,
+    ToolRegistry,
+)
 
 
-def build_agent() -> Agent:
+def build_agent(*, allow_side_effects: bool = True) -> Agent:
+    system = build_demo_system()
     registry = ToolRegistry(
         [
-            GetOrder(),
-            GetShippingPolicy(),
-            CalculateDelay(),
+            GetOrder(system),
+            GetTracking(system),
+            GetShippingPolicy(system),
+            GetCustomerHistory(system),
+            CreateEscalation(system),
         ]
     )
-    return Agent(SupportPlanner(), registry)
+    return Agent(
+        SupportPlanner(),
+        registry,
+        allow_side_effects=allow_side_effects,
+    )
+
+
+def demo_cases() -> list[EvaluationCase]:
+    return [
+        EvaluationCase(
+            "late express shipment",
+            AgentTask("C-02", "O-1002"),
+            "escalation",
+        ),
+        EvaluationCase(
+            "on-time shipment",
+            AgentTask("C-03", "O-1003"),
+            "no escalation",
+        ),
+        EvaluationCase(
+            "late shipment with recent escalation",
+            AgentTask("C-04", "O-1004"),
+            "manual review",
+        ),
+    ]
 
 
 def main() -> None:
     agent = build_agent()
-    tasks = [
-        AgentTask("C-02", "O-1002"),
-        AgentTask("C-03", "O-1003"),
-    ]
+    cases = demo_cases()
+    results = []
 
     print("How Agents Work")
     print("================")
+    print(
+        "A deterministic agent that observes, chooses tools, updates memory, and replans."
+    )
     print()
 
-    for task in tasks:
-        result = agent.run(task)
+    for case in cases:
+        result = agent.run(case.task)
+        results.append((case, result))
 
-        print(f"Task: {task.description}")
+        print(f"Task: {case.name}")
+        print(f"  {case.task.description}")
         for entry in result.trace:
             print(f"  [{entry.step}] {entry.kind:<11} {entry.detail}")
+        print(f"  Result: {'completed' if result.success else 'failed'}")
+        print(f"  Decision: {result.message}")
+        print("-" * 80)
 
-        print()
-        print(f"Result: {'completed' if result.success else 'failed'}")
-        print(f"Decision: {result.message}")
-        print("-" * 72)
+    passed, total = evaluate(results)
+    print(f"Evaluation: {passed}/{total} scenarios matched their expected outcome.")
 
 
 if __name__ == "__main__":
