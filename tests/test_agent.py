@@ -41,7 +41,9 @@ def test_agent_stops_at_the_step_limit() -> None:
         def decide(self, state):
             return Decision(action="tool", tool_name="unknown")
 
-    result = Agent(NoProgressPlanner(), ToolRegistry([]), max_steps=2)
+    result = Agent(NoProgressPlanner(), ToolRegistry([]), max_steps=2).run(
+        AgentTask("C-02", "O-1002")
+    )
 
     assert not result.success
     assert "stopped after 2 steps" in result.message
