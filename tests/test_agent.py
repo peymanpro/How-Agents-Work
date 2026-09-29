@@ -40,6 +40,17 @@ def test_recent_history_changes_the_plan() -> None:
     )
 
 
+def test_small_delay_does_not_cross_the_escalation_threshold() -> None:
+    result = build_agent().run(AgentTask("C-05", "O-1005"))
+
+    assert result.success
+    assert "no escalation yet" in result.message
+    assert all(
+        "create_escalation" not in entry.detail
+        for entry in result.trace
+    )
+
+
 def test_side_effects_can_be_blocked() -> None:
     result = build_agent(allow_side_effects=False).run(
         AgentTask("C-02", "O-1002")

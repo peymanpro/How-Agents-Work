@@ -61,12 +61,14 @@ def build_demo_system() -> DemoSystem:
             "O-1002": Order("O-1002", "C-02", "express", "T-7002", 4, "delayed"),
             "O-1003": Order("O-1003", "C-03", "standard", "T-7003", 2, "delivered"),
             "O-1004": Order("O-1004", "C-04", "standard", "T-7004", 5, "delayed"),
+            "O-1005": Order("O-1005", "C-05", "standard", "T-7005", 4, "delayed"),
         },
         tracking={
             "T-7001": Tracking("T-7001", "delivered"),
             "T-7002": Tracking("T-7002", "in_transit"),
             "T-7003": Tracking("T-7003", "delivered"),
             "T-7004": Tracking("T-7004", "exception", "carrier delay"),
+            "T-7005": Tracking("T-7005", "in_transit"),
         },
         policies={"standard": 3, "express": 2},
         escalation_thresholds={"standard": 2, "express": 1},
@@ -75,5 +77,6 @@ def build_demo_system() -> DemoSystem:
             "C-02": CustomerHistory("C-02", 0),
             "C-03": CustomerHistory("C-03", 0),
             "C-04": CustomerHistory("C-04", 1),
+            "C-05": CustomerHistory("C-05", 0),
         },
     )

@@ -48,6 +48,11 @@ def demo_cases() -> list[EvaluationCase]:
             AgentTask("C-04", "O-1004"),
             "manual review",
         ),
+        EvaluationCase(
+            "late shipment below escalation threshold",
+            AgentTask("C-05", "O-1005"),
+            "no escalation yet",
+        ),
     ]
 
 
