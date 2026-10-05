@@ -2,6 +2,10 @@
 
 A small deterministic Python project for understanding how an agent works as a **system**.
 
+> This repository is an **agent execution laboratory**, not a production agent framework.
+
+The goal is to make the runtime around a model visible: what context the model receives, what decision it proposes, how the runtime validates a tool call, what the environment returns, and how that observation changes the next decision.
+
 It is intentionally not an LLM demo.
 
 There is no model API, no external service, and no framework hiding the control flow. Instead, the repository makes the runtime visible:
@@ -143,6 +147,40 @@ The key idea is:
 
 That is what makes the loop agent-like.
 
+## The model/runtime boundary
+
+The most important architectural boundary is:
+
+```text
+Model context
+    ↓
+Planner / model
+    ↓
+Structured Decision
+    ↓
+Runtime validation + guardrails
+    ↓
+Tool
+    ↓
+Observation
+    ↓
+State + memory update
+    ↓
+New model context
+```
+
+The deterministic planner is deliberately shaped like a model boundary. A future LLM planner could produce the same `Decision` structure without changing the core runtime.
+
+At each step the planner receives:
+
+- the original goal,
+- current working memory,
+- previous observations,
+- available tool descriptions and argument schemas,
+- runtime constraints such as remaining tool-call budget.
+
+The planner does **not** execute tools directly. The runtime resolves, validates, authorizes, executes, and records the requested tool call.
+
 ## The runtime pieces
 
 ### Task
@@ -189,7 +227,7 @@ The important concept is that observations are not thrown away after a tool call
 
 ### Planner
 
-`SupportPlanner` chooses one of:
+`SupportPlanner` is a deterministic stand-in for the decision-making part of an LLM. It chooses one of:
 
 ```text
 tool
@@ -727,3 +765,82 @@ The project should be small enough to read, but not so small that it becomes a t
 The main question is:
 
 > **How does a system repeatedly turn evidence into the next action without losing control of the run?**
+
+
+## Why this is closer to a real agent
+
+The project intentionally does **not** add an LLM just to make the example look more impressive.
+
+Instead, it makes the important LLM-agent boundaries explicit:
+
+```text
+Goal
+ ↓
+Context assembled for the model
+ ↓
+Model-like decision
+ ↓
+Structured tool call
+ ↓
+Runtime validation
+ ↓
+Tool execution
+ ↓
+Observation
+ ↓
+Updated context
+ ↓
+Decision again
+```
+
+This lets the reader understand the architecture before introducing model-specific concerns such as prompts, tokens, provider APIs, or non-deterministic outputs.
+
+### Model output can be imperfect
+
+The runtime treats the planner output as untrusted input.
+
+For example, it rejects:
+
+- unknown tools,
+- missing required arguments,
+- unexpected arguments,
+- blocked side effects,
+- repeated identical tool calls,
+- calls after the tool budget is exhausted.
+
+That separation is intentional:
+
+> **The model proposes an action; the runtime decides whether that action can execute.**
+
+### The trace shows the whole cycle
+
+The trace now exposes:
+
+```text
+context
+model_output
+tool_call
+observation
+context
+model_output
+...
+```
+
+This makes the project useful for studying not just the final result, but the execution process itself.
+
+## Design boundary
+
+This repository intentionally stops before building:
+
+- a production LLM integration,
+- RAG,
+- vector databases,
+- persistent memory,
+- multi-agent orchestration,
+- distributed execution.
+
+Those are separate topics.
+
+The purpose here is narrower:
+
+> **Understand the control loop that turns goals and observations into repeated actions while keeping execution bounded and inspectable.**
