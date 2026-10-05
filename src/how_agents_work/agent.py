@@ -2,11 +2,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from .models import AgentResult, AgentState, AgentTask, TraceEntry
+from .models import AgentResult, AgentState, AgentTask, Decision, TraceEntry
+from .planner import build_context
 from .tools import ToolRegistry
 
 
 class Agent:
+    """Small, inspectable agent runtime.
+
+    The planner acts like the model boundary. It receives a structured context,
+    proposes a decision, and never executes tools directly. The runtime validates
+    that proposal, executes the selected capability, records the observation, and
+    builds a fresh context for the next decision.
+    """
+
     def __init__(
         self,
         planner,
@@ -31,8 +40,29 @@ class Agent:
         trace: list[TraceEntry] = []
 
         for step in range(1, self._max_steps + 1):
-            decision = self._planner.decide(state)
-            trace.append(TraceEntry(step, "decision", decision.reason))
+            context = build_context(
+                state,
+                step=step,
+                tools=self._tools,
+                allow_side_effects=self._allow_side_effects,
+                max_tool_calls=self._max_tool_calls,
+            )
+            trace.append(
+                TraceEntry(
+                    step,
+                    "context",
+                    self._format_context(context),
+                )
+            )
+
+            decision = self._planner.decide(context)
+            trace.append(
+                TraceEntry(
+                    step,
+                    "model_output",
+                    self._format_decision(decision),
+                )
+            )
 
             if decision.action == "finish":
                 message = decision.message or "done"
@@ -45,12 +75,24 @@ class Agent:
                 return self._result(False, message, state, trace)
 
             if decision.action != "tool":
-                raise ValueError(f"unknown planner action: {decision.action!r}")
+                message = f"unknown planner action: {decision.action!r}"
+                trace.append(TraceEntry(step, "validation", message))
+                return self._result(False, message, state, trace)
 
             tool = self._tools.get(decision.tool_name or "")
             if tool is None:
                 message = f"tool {decision.tool_name!r} is not registered"
-                trace.append(TraceEntry(step, "fail", message))
+                trace.append(TraceEntry(step, "validation", message))
+                return self._result(False, message, state, trace)
+
+            missing = sorted(set(tool.arguments) - set(decision.arguments))
+            unexpected = sorted(set(decision.arguments) - set(tool.arguments))
+            if missing or unexpected:
+                message = (
+                    f"invalid arguments for {tool.name!r}; "
+                    f"missing={missing or []}, unexpected={unexpected or []}"
+                )
+                trace.append(TraceEntry(step, "validation", message))
                 return self._result(False, message, state, trace)
 
             if not self._allow_side_effects and not tool.read_only:
@@ -60,26 +102,36 @@ class Agent:
 
             if len(state.tool_calls) >= self._max_tool_calls:
                 message = f"tool-call budget of {self._max_tool_calls} was exhausted"
-                trace.append(TraceEntry(step, "fail", message))
+                trace.append(TraceEntry(step, "guardrail", message))
                 return self._result(False, message, state, trace)
 
             if state.has_called(tool.name, decision.arguments):
                 message = f"repeated tool call detected: {tool.name!r}"
-                trace.append(TraceEntry(step, "fail", message))
+                trace.append(TraceEntry(step, "guardrail", message))
                 return self._result(False, message, state, trace)
 
             arguments = self._format_arguments(decision.arguments)
-            trace.append(TraceEntry(step, "action", f"{tool.name}({arguments})"))
+            trace.append(
+                TraceEntry(
+                    step,
+                    "tool_call",
+                    f"{tool.name}({arguments})",
+                )
+            )
             state.remember_call(tool.name, decision.arguments)
 
             observation = self._tools.run(tool.name, decision.arguments)
             state.add_observation(observation)
             trace.append(
-                TraceEntry(step, "observation", self._format_observation(observation))
+                TraceEntry(
+                    step,
+                    "observation",
+                    self._format_observation(observation),
+                )
             )
 
         message = f"stopped after {self._max_steps} steps to prevent an infinite loop"
-        trace.append(TraceEntry(self._max_steps, "fail", message))
+        trace.append(TraceEntry(self._max_steps, "guardrail", message))
         return self._result(False, message, state, trace)
 
     @staticmethod
@@ -104,9 +156,40 @@ class Agent:
     @staticmethod
     def _format_observation(observation) -> str:
         if not observation.success:
-            return f"{observation.source}: error={observation.error}"
+            return (
+                f"{observation.source}: "
+                f"error_code={observation.error_code or 'tool_error'}, "
+                f"error={observation.error}"
+            )
 
         values = ", ".join(
             f"{key}={value}" for key, value in observation.values.items()
         )
         return f"{observation.source}: {values}"
+
+    @staticmethod
+    def _format_decision(decision: Decision) -> str:
+        if decision.action != "tool":
+            return f"{decision.action}: {decision.message or decision.reason}"
+        return (
+            f"tool_call={decision.tool_name}("
+            f"{Agent._format_arguments(decision.arguments)})"
+        )
+
+    @staticmethod
+    def _format_context(context) -> str:
+        tools = ", ".join(tool.name for tool in context.available_tools)
+        memory = ", ".join(
+            f"{key}={value}" for key, value in context.memory.items()
+        ) or "empty"
+        observations = ", ".join(
+            f"{item.source}:{'ok' if item.success else 'error'}"
+            for item in context.observations
+        ) or "none"
+        return (
+            f"goal={context.task.description}; "
+            f"memory={memory}; "
+            f"observations={observations}; "
+            f"tools=[{tools}]; "
+            f"constraints={dict(context.constraints)}"
+        )
