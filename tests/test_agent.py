@@ -3,6 +3,7 @@ import pytest
 from how_agents_work.agent import Agent
 from how_agents_work.data import build_demo_system
 from how_agents_work.main import build_agent
+from how_agents_work.planner import SupportPlanner
 from how_agents_work.models import AgentTask, Decision
 from how_agents_work.tools import GetOrder, GetTracking, ToolRegistry
 
@@ -53,7 +54,7 @@ def test_failed_tool_observation_stops_the_run_safely() -> None:
         ]
     )
     result = Agent(
-        build_agent()._planner,
+        SupportPlanner(),
         registry,
     ).run(AgentTask("C-02", "O-1002"))
 
