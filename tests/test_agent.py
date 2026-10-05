@@ -140,6 +140,21 @@ def test_trace_exposes_model_context_and_tool_boundary() -> None:
         {"order_id": "O-1002"},
     ],
 )
+def test_unknown_tool_is_rejected_by_runtime() -> None:
+    class UnknownToolPlanner:
+        def decide(self, context):
+            return Decision("tool", "missing_tool", {})
+
+    result = Agent(
+        UnknownToolPlanner(),
+        ToolRegistry([GetOrder(build_demo_system())]),
+    ).run(AgentTask("C-02", "O-1002"))
+
+    assert not result.success
+    assert "not registered" in result.message
+    assert any(entry.kind == "validation" for entry in result.trace)
+
+
 def test_invalid_tool_arguments_are_rejected_by_runtime(arguments) -> None:
     class BadPlanner:
         def decide(self, context):
