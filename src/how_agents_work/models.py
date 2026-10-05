@@ -31,7 +31,6 @@ class Observation:
     success: bool
     values: Mapping[str, str] = field(default_factory=dict)
     error: str | None = None
-    error_code: str | None = None
 
 
 @dataclass(frozen=True)
