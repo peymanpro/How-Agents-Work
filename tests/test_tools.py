@@ -29,3 +29,13 @@ def test_registry_describes_tools() -> None:
     assert registry.describe() == [
         "get_order: Look up an order after verifying customer ownership."
     ]
+
+
+def test_registry_exposes_structured_tool_specs() -> None:
+    registry = ToolRegistry([GetOrder(build_demo_system())])
+
+    spec = registry.specs()[0]
+
+    assert spec.name == "get_order"
+    assert spec.read_only is True
+    assert spec.arguments == ("order_id", "customer_id")

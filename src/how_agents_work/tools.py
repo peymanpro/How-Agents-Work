@@ -3,13 +3,22 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from .data import DemoSystem
-from .models import Observation
+from .models import Observation, ToolSpec
 
 
 class Tool:
     name: str
     description: str
     read_only: bool = True
+    arguments: tuple[str, ...] = ()
+
+    def spec(self):
+        return ToolSpec(
+            name=self.name,
+            description=self.description,
+            read_only=self.read_only,
+            arguments=self.arguments,
+        )
 
     def run(self, arguments: Mapping[str, str]) -> Observation:
         raise NotImplementedError
@@ -18,6 +27,7 @@ class Tool:
 class GetOrder(Tool):
     name = "get_order"
     description = "Look up an order after verifying customer ownership."
+    arguments = ("order_id", "customer_id")
 
     def __init__(self, system: DemoSystem) -> None:
         self._system = system
@@ -59,6 +69,7 @@ class GetOrder(Tool):
 class GetTracking(Tool):
     name = "get_tracking"
     description = "Read the latest carrier status for an order."
+    arguments = ("tracking_id",)
 
     def __init__(self, system: DemoSystem) -> None:
         self._system = system
@@ -87,6 +98,7 @@ class GetTracking(Tool):
 class GetShippingPolicy(Tool):
     name = "get_shipping_policy"
     description = "Read delivery limits and escalation thresholds for a shipping method."
+    arguments = ("shipping_method",)
 
     def __init__(self, system: DemoSystem) -> None:
         self._system = system
@@ -117,6 +129,7 @@ class GetShippingPolicy(Tool):
 class GetCustomerHistory(Tool):
     name = "get_customer_history"
     description = "Check recent escalation history before creating another escalation."
+    arguments = ("customer_id",)
 
     def __init__(self, system: DemoSystem) -> None:
         self._system = system
@@ -148,6 +161,7 @@ class CreateEscalation(Tool):
     name = "create_escalation"
     description = "Create one escalation for an order. This is a side-effecting tool."
     read_only = False
+    arguments = ("order_id", "reason")
 
     def __init__(self, system: DemoSystem) -> None:
         self._system = system
@@ -189,6 +203,9 @@ class ToolRegistry:
         if tool is None:
             return Observation(name, False, error=f"tool {name!r} is not registered")
         return tool.run(arguments)
+
+    def specs(self):
+        return [tool.spec() for tool in self._tools.values()]
 
     def describe(self) -> list[str]:
         return [f"{tool.name}: {tool.description}" for tool in self._tools.values()]

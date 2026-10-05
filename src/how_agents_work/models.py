@@ -18,6 +18,14 @@ class AgentTask:
 
 
 @dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    description: str
+    read_only: bool
+    arguments: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Observation:
     source: str
     success: bool
@@ -32,6 +40,27 @@ class Decision:
     arguments: Mapping[str, str] = field(default_factory=dict)
     reason: str = ""
     message: str | None = None
+
+
+@dataclass(frozen=True)
+class ModelContext:
+    """The structured context a model/planner receives for one decision."""
+
+    task: AgentTask
+    step: int
+    memory: Mapping[str, str]
+    observations: tuple[Observation, ...]
+    available_tools: tuple[ToolSpec, ...]
+    constraints: Mapping[str, str]
+
+    def latest(self, source: str) -> Observation | None:
+        for observation in reversed(self.observations):
+            if observation.source == source:
+                return observation
+        return None
+
+    def has_tool(self, name: str) -> bool:
+        return any(tool.name == name for tool in self.available_tools)
 
 
 @dataclass(frozen=True)
@@ -65,6 +94,22 @@ class AgentState:
 
     def remember_call(self, tool_name: str, arguments: Mapping[str, str]) -> None:
         self.tool_calls.append((tool_name, tuple(sorted(arguments.items()))))
+
+    def build_context(
+        self,
+        *,
+        step: int,
+        available_tools: tuple[ToolSpec, ...],
+        constraints: Mapping[str, str],
+    ) -> ModelContext:
+        return ModelContext(
+            task=self.task,
+            step=step,
+            memory=self.memory.snapshot(),
+            observations=tuple(self.observations),
+            available_tools=available_tools,
+            constraints=dict(constraints),
+        )
 
 
 @dataclass(frozen=True)

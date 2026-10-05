@@ -1,21 +1,25 @@
 from __future__ import annotations
 
-from .models import AgentState, Decision
+from .models import Decision, ModelContext
 
 
 class SupportPlanner:
-    """Choose the next action from the evidence gathered so far."""
+    """Deterministic model stand-in.
 
-    def decide(self, state: AgentState) -> Decision:
-        order = state.latest("get_order")
+    It consumes a model-shaped context rather than reaching into runtime state
+    directly. A real LLM planner can later implement the same decision contract.
+    """
+
+    def decide(self, context: ModelContext) -> Decision:
+        order = context.latest("get_order")
 
         if order is None:
             return Decision(
                 "tool",
                 "get_order",
                 {
-                    "order_id": state.task.order_id,
-                    "customer_id": state.task.customer_id,
+                    "order_id": context.task.order_id,
+                    "customer_id": context.task.customer_id,
                 },
                 reason="I need verified order data before I can investigate the shipment.",
             )
@@ -27,7 +31,7 @@ class SupportPlanner:
                 message=f"the order could not be verified: {order.error}",
             )
 
-        tracking = state.latest("get_tracking")
+        tracking = context.latest("get_tracking")
         if tracking is None:
             return Decision(
                 "tool",
@@ -43,7 +47,7 @@ class SupportPlanner:
                 message=f"tracking could not be verified: {tracking.error}",
             )
 
-        policy = state.latest("get_shipping_policy")
+        policy = context.latest("get_shipping_policy")
         if policy is None:
             return Decision(
                 "tool",
@@ -70,12 +74,12 @@ class SupportPlanner:
                 message="no escalation is needed: the shipment is within the allowed delivery time",
             )
 
-        history = state.latest("get_customer_history")
+        history = context.latest("get_customer_history")
         if history is None:
             return Decision(
                 "tool",
                 "get_customer_history",
-                {"customer_id": state.task.customer_id},
+                {"customer_id": context.task.customer_id},
                 reason="The shipment is late; I should check recent history before creating a side effect.",
             )
 
@@ -90,7 +94,7 @@ class SupportPlanner:
         threshold = int(policy.values["escalation_threshold"])
         tracking_status = tracking.values["latest_status"]
 
-        escalation = state.latest("create_escalation")
+        escalation = context.latest("create_escalation")
         if escalation is not None:
             if escalation.success:
                 return Decision(
@@ -125,3 +129,4 @@ class SupportPlanner:
             {"order_id": order.values["order_id"], "reason": reason},
             reason="The evidence crosses the escalation threshold and no recent escalation exists.",
         )
+

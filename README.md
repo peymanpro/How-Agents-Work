@@ -2,6 +2,10 @@
 
 A small deterministic Python project for understanding how an agent works as a **system**.
 
+> This repository is an **agent execution laboratory**, not a production agent framework.
+
+The goal is to make the runtime around a model visible: what context the model receives, what decision it proposes, how the runtime validates a tool call, what the environment returns, and how that observation changes the next decision.
+
 It is intentionally not an LLM demo.
 
 There is no model API, no external service, and no framework hiding the control flow. Instead, the repository makes the runtime visible:
@@ -143,6 +147,40 @@ The key idea is:
 
 That is what makes the loop agent-like.
 
+## The model/runtime boundary
+
+The most important architectural boundary is:
+
+```text
+Model context
+    ↓
+Planner / model
+    ↓
+Structured Decision
+    ↓
+Runtime validation + guardrails
+    ↓
+Tool
+    ↓
+Observation
+    ↓
+State + memory update
+    ↓
+New model context
+```
+
+The deterministic planner is deliberately shaped like a model boundary. A future LLM planner could produce the same `Decision` structure without changing the core runtime.
+
+At each step the planner receives:
+
+- the original goal,
+- current working memory,
+- previous observations,
+- available tool descriptions and required arguments,
+- runtime constraints such as remaining tool-call budget.
+
+The planner does **not** execute tools directly. The runtime resolves, validates, authorizes, executes, and records the requested tool call.
+
 ## The runtime pieces
 
 ### Task
@@ -189,7 +227,7 @@ The important concept is that observations are not thrown away after a tool call
 
 ### Planner
 
-`SupportPlanner` chooses one of:
+`SupportPlanner` is a deterministic stand-in for the decision-making part of an LLM. It chooses one of:
 
 ```text
 tool
@@ -696,23 +734,27 @@ A useful way to remember the architecture is:
 
 ```text
 Goal
-  +
-Current State
-  +
-Available Capabilities
-  +
-Runtime Rules
   ↓
-Next Action
+Model Context
+  ↓
+Model / Planner
+  ↓
+Decision
+  ↓
+Runtime Validation
+  ↓
+Tool
   ↓
 Observation
   ↓
-Updated State
+State + Memory
+  ↓
+New Model Context
   ↓
 Repeat
 ```
 
-The model can be swapped.
+The model can be deterministic for this project or replaced by an LLM later.
 
 The tools can be swapped.
 
@@ -722,8 +764,8 @@ The runtime loop remains recognizable.
 
 ## Design goal
 
-The project should be small enough to read, but not so small that it becomes a toy pipeline.
+The project should be small enough to read, but realistic enough to expose the boundaries that matter in an agent run.
 
-The main question is:
+The central question is:
 
-> **How does a system repeatedly turn evidence into the next action without losing control of the run?**
+> **How does an agent repeatedly turn a goal and new evidence into the next action without losing control of execution?**

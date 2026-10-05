@@ -4,6 +4,7 @@ from how_agents_work.agent import Agent
 from how_agents_work.data import build_demo_system
 from how_agents_work.main import build_agent
 from how_agents_work.models import AgentTask, Decision
+from how_agents_work.planner import SupportPlanner
 from how_agents_work.tools import GetOrder, GetTracking, ToolRegistry
 
 
@@ -13,7 +14,7 @@ def test_delayed_order_reaches_a_side_effecting_tool() -> None:
     assert result.success
     assert "escalation created" in result.message
     assert any(
-        entry.kind == "action" and "create_escalation" in entry.detail
+        entry.kind == "tool_call" and "create_escalation" in entry.detail
         for entry in result.trace
     )
 
@@ -23,7 +24,11 @@ def test_on_time_order_finishes_without_escalation() -> None:
 
     assert result.success
     assert "no escalation" in result.message
-    assert all("create_escalation" not in entry.detail for entry in result.trace)
+    assert all(
+        "create_escalation" not in entry.detail
+        for entry in result.trace
+        if entry.kind == "tool_call"
+    )
 
 
 def test_recent_history_changes_the_plan() -> None:
@@ -31,7 +36,11 @@ def test_recent_history_changes_the_plan() -> None:
 
     assert result.success
     assert "manual review" in result.message
-    assert all("create_escalation" not in entry.detail for entry in result.trace)
+    assert all(
+        "create_escalation" not in entry.detail
+        for entry in result.trace
+        if entry.kind == "tool_call"
+    )
 
 
 def test_small_delay_does_not_cross_the_escalation_threshold() -> None:
@@ -39,7 +48,11 @@ def test_small_delay_does_not_cross_the_escalation_threshold() -> None:
 
     assert result.success
     assert "no escalation yet" in result.message
-    assert all("create_escalation" not in entry.detail for entry in result.trace)
+    assert all(
+        "create_escalation" not in entry.detail
+        for entry in result.trace
+        if entry.kind == "tool_call"
+    )
 
 
 def test_failed_tool_observation_stops_the_run_safely() -> None:
@@ -53,7 +66,7 @@ def test_failed_tool_observation_stops_the_run_safely() -> None:
         ]
     )
     result = Agent(
-        build_agent()._planner,
+        SupportPlanner(),
         registry,
     ).run(AgentTask("C-02", "O-1002"))
 
@@ -72,7 +85,7 @@ def test_side_effects_can_be_blocked() -> None:
 
 def test_repeated_tool_calls_are_guarded() -> None:
     class RepeatingPlanner:
-        def decide(self, state):
+        def decide(self, context):
             return Decision(
                 "tool",
                 "get_order",
@@ -94,7 +107,7 @@ def test_tool_call_budget_is_enforced() -> None:
         def __init__(self) -> None:
             self._customer = 0
 
-        def decide(self, state):
+        def decide(self, context):
             self._customer += 1
             return Decision(
                 "tool",
@@ -122,3 +135,52 @@ def test_invalid_limits_are_rejected() -> None:
 
     with pytest.raises(ValueError):
         Agent(object(), ToolRegistry([]), max_tool_calls=0)
+
+
+def test_trace_exposes_model_context_and_tool_boundary() -> None:
+    result = build_agent().run(AgentTask("C-02", "O-1002"))
+
+    assert any(entry.kind == "context" for entry in result.trace)
+    assert any(entry.kind == "model_output" for entry in result.trace)
+    assert any(entry.kind == "tool_call" for entry in result.trace)
+    assert any(
+        "tools=[" in entry.detail
+        for entry in result.trace
+        if entry.kind == "context"
+    )
+
+
+def test_unknown_tool_is_rejected_by_runtime() -> None:
+    class UnknownToolPlanner:
+        def decide(self, context):
+            return Decision("tool", "missing_tool", {})
+
+    result = Agent(
+        UnknownToolPlanner(),
+        ToolRegistry([GetOrder(build_demo_system())]),
+    ).run(AgentTask("C-02", "O-1002"))
+
+    assert not result.success
+    assert "not registered" in result.message
+    assert any(entry.kind == "validation" for entry in result.trace)
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"order_id": "O-1002", "unexpected": "value"},
+        {"order_id": "O-1002"},
+    ],
+)
+def test_invalid_tool_arguments_are_rejected_by_runtime(arguments) -> None:
+    class BadPlanner:
+        def decide(self, context):
+            return Decision("tool", "get_order", arguments)
+
+    result = Agent(
+        BadPlanner(),
+        ToolRegistry([GetOrder(build_demo_system())]),
+    ).run(AgentTask("C-02", "O-1002"))
+
+    assert not result.success
+    assert "invalid arguments" in result.message

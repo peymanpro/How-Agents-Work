@@ -4,10 +4,18 @@ from how_agents_work.planner import SupportPlanner
 from how_agents_work.tools import GetOrder
 
 
+def context_for(state: AgentState):
+    return state.build_context(
+        step=1,
+        available_tools=(),
+        constraints={},
+    )
+
+
 def test_planner_starts_with_information_gathering() -> None:
     state = AgentState(AgentTask("C-02", "O-1002"))
 
-    decision = SupportPlanner().decide(state)
+    decision = SupportPlanner().decide(context_for(state))
 
     assert decision.action == "tool"
     assert decision.tool_name == "get_order"
@@ -19,7 +27,7 @@ def test_planner_reacts_to_a_failed_lookup() -> None:
         Observation("get_order", False, error="missing order")
     )
 
-    decision = SupportPlanner().decide(state)
+    decision = SupportPlanner().decide(context_for(state))
 
     assert decision.action == "fail"
 
@@ -32,6 +40,6 @@ def test_planner_builds_its_next_step_from_observed_state() -> None:
         )
     )
 
-    decision = SupportPlanner().decide(state)
+    decision = SupportPlanner().decide(context_for(state))
 
     assert decision.tool_name == "get_tracking"
