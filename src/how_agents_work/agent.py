@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from .models import AgentResult, AgentState, AgentTask, Decision, TraceEntry
-from .planner import build_context
 from .tools import ToolRegistry
 
 
@@ -40,12 +39,17 @@ class Agent:
         trace: list[TraceEntry] = []
 
         for step in range(1, self._max_steps + 1):
-            context = build_context(
-                state,
+            context = state.build_context(
                 step=step,
-                tools=self._tools,
-                allow_side_effects=self._allow_side_effects,
-                max_tool_calls=self._max_tool_calls,
+                available_tools=tuple(self._tools.specs()),
+                constraints={
+                    "side_effects": (
+                        "allowed" if self._allow_side_effects else "blocked"
+                    ),
+                    "remaining_tool_calls": str(
+                        max(0, self._max_tool_calls - len(state.tool_calls))
+                    ),
+                },
             )
             trace.append(
                 TraceEntry(
@@ -156,11 +160,7 @@ class Agent:
     @staticmethod
     def _format_observation(observation) -> str:
         if not observation.success:
-            return (
-                f"{observation.source}: "
-                f"error_code={observation.error_code or 'tool_error'}, "
-                f"error={observation.error}"
-            )
+            return f"{observation.source}: error={observation.error}"
 
         values = ", ".join(
             f"{key}={value}" for key, value in observation.values.items()
