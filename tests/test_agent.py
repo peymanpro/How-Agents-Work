@@ -13,7 +13,7 @@ def test_delayed_order_reaches_a_side_effecting_tool() -> None:
     assert result.success
     assert "escalation created" in result.message
     assert any(
-        entry.kind == "action" and "create_escalation" in entry.detail
+        entry.kind == "tool_call" and "create_escalation" in entry.detail
         for entry in result.trace
     )
 
