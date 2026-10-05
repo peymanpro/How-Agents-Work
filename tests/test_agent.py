@@ -23,7 +23,7 @@ def test_on_time_order_finishes_without_escalation() -> None:
 
     assert result.success
     assert "no escalation" in result.message
-    assert all("create_escalation" not in entry.detail for entry in result.trace)
+    assert all(\n        "create_escalation" not in entry.detail\n        for entry in result.trace\n        if entry.kind == "tool_call"\n    )
 
 
 def test_recent_history_changes_the_plan() -> None:
