@@ -133,14 +133,17 @@ def test_trace_exposes_model_context_and_tool_boundary() -> None:
     assert any("tools=[" in entry.detail for entry in result.trace if entry.kind == "context")
 
 
-def test_invalid_tool_arguments_are_rejected_by_runtime() -> None:
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"order_id": "O-1002", "unexpected": "value"},
+        {"order_id": "O-1002"},
+    ],
+)
+def test_invalid_tool_arguments_are_rejected_by_runtime(arguments) -> None:
     class BadPlanner:
         def decide(self, context):
-            return Decision(
-                "tool",
-                "get_order",
-                {"order_id": "O-1002", "unexpected": "value"},
-            )
+            return Decision("tool", "get_order", arguments)
 
     result = Agent(
         BadPlanner(),
