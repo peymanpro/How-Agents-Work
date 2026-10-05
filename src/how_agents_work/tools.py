@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from .data import DemoSystem
-from .models import Observation
+from .models import Observation, ToolSpec
 
 
 class Tool:
@@ -13,8 +13,6 @@ class Tool:
     arguments: tuple[str, ...] = ()
 
     def spec(self):
-        from .models import ToolSpec
-
         return ToolSpec(
             name=self.name,
             description=self.description,
