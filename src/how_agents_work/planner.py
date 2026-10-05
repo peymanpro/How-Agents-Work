@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .models import AgentState, Decision, ModelContext
+from .models import Decision, ModelContext
 
 
 class SupportPlanner:
@@ -130,22 +130,3 @@ class SupportPlanner:
             reason="The evidence crosses the escalation threshold and no recent escalation exists.",
         )
 
-
-def build_context(
-    state: AgentState,
-    *,
-    step: int,
-    tools,
-    allow_side_effects: bool,
-    max_tool_calls: int,
-) -> ModelContext:
-    specs = tuple(tools.specs())
-    constraints = {
-        "side_effects": "allowed" if allow_side_effects else "blocked",
-        "remaining_tool_calls": str(max(0, max_tool_calls - len(state.tool_calls))),
-    }
-    return state.build_context(
-        step=step,
-        available_tools=specs,
-        constraints=constraints,
-    )
