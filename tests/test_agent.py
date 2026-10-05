@@ -72,7 +72,7 @@ def test_side_effects_can_be_blocked() -> None:
 
 def test_repeated_tool_calls_are_guarded() -> None:
     class RepeatingPlanner:
-        def decide(self, state):
+        def decide(self, context):
             return Decision(
                 "tool",
                 "get_order",
@@ -122,3 +122,30 @@ def test_invalid_limits_are_rejected() -> None:
 
     with pytest.raises(ValueError):
         Agent(object(), ToolRegistry([]), max_tool_calls=0)
+
+
+def test_trace_exposes_model_context_and_tool_boundary() -> None:
+    result = build_agent().run(AgentTask("C-02", "O-1002"))
+
+    assert any(entry.kind == "context" for entry in result.trace)
+    assert any(entry.kind == "model_output" for entry in result.trace)
+    assert any(entry.kind == "tool_call" for entry in result.trace)
+    assert any("tools=[" in entry.detail for entry in result.trace if entry.kind == "context")
+
+
+def test_invalid_tool_arguments_are_rejected_by_runtime() -> None:
+    class BadPlanner:
+        def decide(self, context):
+            return Decision(
+                "tool",
+                "get_order",
+                {"order_id": "O-1002", "unexpected": "value"},
+            )
+
+    result = Agent(
+        BadPlanner(),
+        ToolRegistry([GetOrder(build_demo_system())]),
+    ).run(AgentTask("C-02", "O-1002"))
+
+    assert not result.success
+    assert "invalid arguments" in result.message
