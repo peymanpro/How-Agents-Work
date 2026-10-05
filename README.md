@@ -176,7 +176,7 @@ At each step the planner receives:
 - the original goal,
 - current working memory,
 - previous observations,
-- available tool descriptions and argument schemas,
+- available tool descriptions and required arguments,
 - runtime constraints such as remaining tool-call budget.
 
 The planner does **not** execute tools directly. The runtime resolves, validates, authorizes, executes, and records the requested tool call.
@@ -734,23 +734,27 @@ A useful way to remember the architecture is:
 
 ```text
 Goal
-  +
-Current State
-  +
-Available Capabilities
-  +
-Runtime Rules
   ↓
-Next Action
+Model Context
+  ↓
+Model / Planner
+  ↓
+Decision
+  ↓
+Runtime Validation
+  ↓
+Tool
   ↓
 Observation
   ↓
-Updated State
+State + Memory
+  ↓
+New Model Context
   ↓
 Repeat
 ```
 
-The model can be swapped.
+The model can be deterministic for this project or replaced by an LLM later.
 
 The tools can be swapped.
 
@@ -760,11 +764,11 @@ The runtime loop remains recognizable.
 
 ## Design goal
 
-The project should be small enough to read, but not so small that it becomes a toy pipeline.
+The project should be small enough to read, but realistic enough to expose the boundaries that matter in an agent run.
 
-The main question is:
+The central question is:
 
-> **How does a system repeatedly turn evidence into the next action without losing control of the run?**
+> **How does an agent repeatedly turn a goal and new evidence into the next action without losing control of execution?**
 
 
 ## Why this is closer to a real agent
