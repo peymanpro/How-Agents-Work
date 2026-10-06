@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "how-agents-work"
-version = "0.2.0"
-description = "A small deterministic example for learning how agent loops work."
+version = "0.3.0"
+description = "A deterministic agent execution laboratory with a simulated model boundary."
 requires-python = ">=3.11"
 dependencies = []
 

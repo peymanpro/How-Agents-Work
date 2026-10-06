@@ -40,6 +40,7 @@ class Decision:
     arguments: Mapping[str, str] = field(default_factory=dict)
     reason: str = ""
     message: str | None = None
+    raw_model_output: str | None = None
 
 
 @dataclass(frozen=True)
