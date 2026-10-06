@@ -1,12 +1,12 @@
 # How Agents Work
 
-A small deterministic Python project for understanding how an agent works as a **system around a model boundary**.
+A small Python project for understanding how an agent works as a **system around a model boundary**.
 
 > This repository is an **agent execution laboratory**, not a production agent framework.
 
 The project makes the execution loop visible: what context a model receives, what response it produces, how that response becomes a structured decision, how the runtime validates and authorizes a tool call, what the environment returns, and how that observation changes the next decision.
 
-There is no trained neural network and no external model API. Instead, the default demo uses a deterministic **MockLLM** that produces an LLM-shaped JSON response. That keeps the laboratory reproducible while making the model/runtime boundary explicit.
+There is no trained neural network and no external model API. The repository provides two local model simulations: a deterministic **MockLLM** for reproducible runs and an **OpenEndedMockLLM** for probabilistic, uncertain, domain-agnostic tool selection.
 
 ## The execution loop
 
@@ -118,6 +118,8 @@ The model receives:
 - available tool descriptions and required arguments,
 - runtime constraints such as remaining tool-call budget.
 
+The open-ended simulator uses these inputs as its only decision context. It does not inspect the shipment domain or call `SupportPlanner`.
+
 The model does not execute tools directly.
 
 ### MockLLM
@@ -152,7 +154,7 @@ deterministic behavior
 inspectable laboratory
 ~~~
 
-MockLLM also supports raw response overrides so tests can simulate malformed model responses without requiring a real API.
+Both model simulations are local and offline. MockLLM also supports raw response overrides so tests can simulate malformed model responses without requiring a real API.
 
 For example:
 
@@ -376,6 +378,53 @@ finish → no escalation yet
 
 The next action depends on the state built from previous evidence.
 
+
+## Open-ended and uncertain decision-making
+
+A real model does not have to follow one deterministic decision tree. At the same context, several actions can be plausible, and the model may choose among them with different confidence.
+
+`OpenEndedMockLLM` approximates that behavior without pretending to be a neural network:
+
+~~~text
+current context
+      ↓
+candidate tool actions
+      ↓
+relevance scoring
+      ↓
+probability distribution
+      ↓
+temperature-controlled sampling
+      ↓
+one model response
+~~~
+
+This creates two properties that the deterministic planner cannot demonstrate:
+
+- **Open decision space:** the next action is selected from the capabilities exposed in the current context rather than from a hard-coded shipment state machine.
+- **Uncertainty:** multiple plausible actions can compete, so repeated runs can produce different model outputs and different confidence values.
+
+The simulation is intentionally limited. Its relevance scoring is lexical and generic; it is **not equivalent to a trained language model understanding an unseen problem**. What it demonstrates is the architectural consequence of introducing an open-ended model boundary: the runtime must be prepared for decisions it did not author and must continue to validate them.
+
+The main demo runs this simulator with side effects blocked so experimentation cannot mutate the environment.
+
+## New problems without shipment-specific rules
+
+The open-ended simulator is not given rules such as:
+
+~~~text
+if delayed:
+    get_tracking
+if threshold crossed:
+    create_escalation
+~~~
+
+Instead, it sees only a task description and generic tool specifications. Tests include a new problem statement about application errors and service health using tools such as `inspect_logs` and `get_metrics`. The simulator can identify relevant capabilities from their descriptions without importing the shipment planner.
+
+This is the right level of claim for this repository:
+
+> **The model simulation can explore a new tool/problem space without a domain-specific decision tree; it does not possess genuine semantic understanding.**
+
 ## Failure is a behavior
 
 The project includes a case where tracking information is unavailable.
@@ -594,7 +643,7 @@ New Model Context
 Repeat
 ~~~
 
-The model can be deterministic in this project or replaced by a real model adapter later.
+The model can be deterministic, probabilistic, or replaced by a real model adapter later. The runtime remains responsible for validation, authorization, tool execution, observations, state, memory, and guardrails.
 
 The tools can be swapped.
 
