@@ -1,6 +1,7 @@
 from .agent import Agent
 from .data import build_demo_system
 from .evaluation import EvaluationCase, evaluate
+from .model import MockLLM, MockLLMPlanner
 from .models import AgentTask
 from .planner import SupportPlanner
 from .tools import (
@@ -13,7 +14,7 @@ from .tools import (
 )
 
 
-def build_agent(*, allow_side_effects: bool = True) -> Agent:
+def build_agent(*, allow_side_effects: bool = True, planner=None) -> Agent:
     system = build_demo_system()
     registry = ToolRegistry(
         [
@@ -24,8 +25,13 @@ def build_agent(*, allow_side_effects: bool = True) -> Agent:
             CreateEscalation(system),
         ]
     )
+
+    if planner is None:
+        reference_policy = SupportPlanner()
+        planner = MockLLMPlanner(MockLLM(reference_policy.decide))
+
     return Agent(
-        SupportPlanner(),
+        planner,
         registry,
         allow_side_effects=allow_side_effects,
     )
@@ -64,7 +70,7 @@ def main() -> None:
     print("How Agents Work")
     print("================")
     print(
-        "A deterministic agent that observes, chooses tools, updates memory, and replans."
+        "A deterministic agent runtime with a simulated LLM response boundary."
     )
     print()
 
@@ -75,7 +81,7 @@ def main() -> None:
         print(f"Task: {case.name}")
         print(f"  {case.task.description}")
         for entry in result.trace:
-            print(f"  [{entry.step}] {entry.kind:<11} {entry.detail}")
+            print(f"  [{entry.step}] {entry.kind:<15} {entry.detail}")
         print(f"  Result: {'completed' if result.success else 'failed'}")
         print(f"  Decision: {result.message}")
         print("-" * 80)
