@@ -1,14 +1,30 @@
 import json
 
-from how_agents_work.model import MockLLM, MockLLMPlanner, ModelOutputParser, OpenEndedMockLLM, OpenEndedMockLLM
-from how_agents_work.models import AgentState, Decision, AgentTask, ToolSpec, ToolSpec
+from how_agents_work.model import (
+    MockLLM,
+    MockLLMPlanner,
+    ModelOutputParser,
+    OpenEndedMockLLM,
+)
+from how_agents_work.models import AgentState, Decision, AgentTask, ToolSpec
 
 
 def build_context():
     state = AgentState(AgentTask("C-02", "O-1002"))
     return state.build_context(
         step=1,
-        available_tools=(),
+        available_tools=(
+            ToolSpec(
+                "inspect_logs",
+                "Inspect recent application logs for errors.",
+                True,
+            ),
+            ToolSpec(
+                "get_metrics",
+                "Read current service health metrics.",
+                True,
+            ),
+        ),
         constraints={"side_effects": "allowed"},
     )
 
