@@ -60,6 +60,15 @@ class Agent:
             )
 
             decision = self._planner.decide(context)
+            if decision.raw_model_output is not None:
+                trace.append(
+                    TraceEntry(
+                        step,
+                        "model_response",
+                        decision.raw_model_output,
+                    )
+                )
+
             trace.append(
                 TraceEntry(
                     step,
