@@ -141,6 +141,7 @@ def test_trace_exposes_model_context_and_tool_boundary() -> None:
     result = build_agent().run(AgentTask("C-02", "O-1002"))
 
     assert any(entry.kind == "context" for entry in result.trace)
+    assert any(entry.kind == "model_response" for entry in result.trace)
     assert any(entry.kind == "model_output" for entry in result.trace)
     assert any(entry.kind == "tool_call" for entry in result.trace)
     assert any(
@@ -148,6 +149,13 @@ def test_trace_exposes_model_context_and_tool_boundary() -> None:
         for entry in result.trace
         if entry.kind == "context"
     )
+
+
+def test_model_response_is_recorded_before_tool_call() -> None:
+    result = build_agent().run(AgentTask("C-02", "O-1002"))
+    kinds = [entry.kind for entry in result.trace]
+
+    assert kinds.index("model_response") < kinds.index("tool_call")
 
 
 def test_unknown_tool_is_rejected_by_runtime() -> None:
