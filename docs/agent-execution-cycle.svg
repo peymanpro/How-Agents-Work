@@ -138,6 +138,9 @@
   <circle r="7" fill="#63a4ff">
     <animateMotion begin="5s" dur="6s" repeatCount="indefinite" path="M1098 350V246H1102"/>
   </circle>
+  <circle r="6" fill="#63a4ff">
+    <animateMotion begin="3.4s" dur="6s" repeatCount="indefinite" path="M760 504C760 650 505 680 350 610C275 576 240 536 240 488V390C240 330 300 280 378 280"/>
+  </circle>
 
   <g fill="none" stroke="#63a4ff">
     <circle cx="578" cy="246" r="26" opacity=".35">
