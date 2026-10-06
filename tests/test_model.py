@@ -1,7 +1,7 @@
 import json
 
-from how_agents_work.model import MockLLM, MockLLMPlanner, ModelOutputParser
-from how_agents_work.models import AgentState, Decision, AgentTask
+from how_agents_work.model import MockLLM, MockLLMPlanner, ModelOutputParser, OpenEndedMockLLM
+from how_agents_work.models import AgentState, Decision, AgentTask, ToolSpec
 
 
 def build_context():
@@ -80,3 +80,74 @@ def test_parser_rejects_non_string_tool_arguments() -> None:
         assert "string key/value pairs" in str(exc)
     else:
         raise AssertionError("expected parser to reject non-string arguments")
+
+
+def test_parser_preserves_model_confidence() -> None:
+    raw = json.dumps(
+        {
+            "action": "finish",
+            "reason": "uncertain",
+            "confidence": 0.37,
+        }
+    )
+
+    decision = ModelOutputParser.parse(raw)
+
+    assert decision.confidence == 0.37
+
+
+def test_open_ended_model_is_reproducible_with_a_seed() -> None:
+    first = OpenEndedMockLLM(seed=42).generate(build_context())
+    second = OpenEndedMockLLM(seed=42).generate(build_context())
+
+    assert first == second
+
+
+def test_open_ended_model_can_make_non_deterministic_choices() -> None:
+    outputs = {
+        OpenEndedMockLLM(seed=seed, temperature=1.5).generate(build_context())
+        for seed in range(12)
+    }
+
+    assert len(outputs) > 1
+
+
+def test_open_ended_model_uses_tool_descriptions_for_a_new_problem() -> None:
+    state = AgentState(
+        AgentTask(
+            "C-01",
+            "O-1001",
+            request=(
+                "Investigate recent application errors and determine the "
+                "current service health."
+            ),
+        )
+    )
+    context = state.build_context(
+        step=1,
+        available_tools=(
+            ToolSpec(
+                "inspect_logs",
+                "Inspect recent application logs for errors.",
+                True,
+            ),
+            ToolSpec(
+                "get_metrics",
+                "Read current service health metrics.",
+                True,
+            ),
+            ToolSpec(
+                "restart_service",
+                "Restart an application service after diagnosis.",
+                False,
+            ),
+        ),
+        constraints={"side_effects": "blocked"},
+    )
+
+    raw = OpenEndedMockLLM(seed=3, temperature=0.4).generate(context)
+    decision = ModelOutputParser.parse(raw)
+
+    assert decision.action == "tool"
+    assert decision.tool_name in {"inspect_logs", "get_metrics"}
+    assert decision.confidence is not None
