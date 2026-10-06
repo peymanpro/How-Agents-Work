@@ -1,58 +1,69 @@
 # How Agents Work
 
-A small deterministic Python project for understanding how an agent works as a **system**.
+A small deterministic Python project for understanding how an agent works as a **system around a model boundary**.
 
 > This repository is an **agent execution laboratory**, not a production agent framework.
 
-The goal is to make the runtime around a model visible: what context the model receives, what decision it proposes, how the runtime validates a tool call, what the environment returns, and how that observation changes the next decision.
+The project makes the execution loop visible: what context a model receives, what response it produces, how that response becomes a structured decision, how the runtime validates and authorizes a tool call, what the environment returns, and how that observation changes the next decision.
 
-It is intentionally not an LLM demo.
+There is no trained neural network and no external model API. Instead, the default demo uses a deterministic **MockLLM** that produces an LLM-shaped JSON response. That keeps the laboratory reproducible while making the model/runtime boundary explicit.
 
-There is no model API, no external service, and no framework hiding the control flow. Instead, the repository makes the runtime visible:
+## The execution loop
 
-```text
+~~~text
 goal
   ↓
-state
+state + memory
   ↓
-planner
+model context
   ↓
-guardrails
+model
+  ↓
+raw model response
+  ↓
+parser
+  ↓
+structured decision
+  ↓
+runtime validation + guardrails
   ↓
 tool
   ↓
 observation
   ↓
-memory + state update
+state + memory update
   ↓
-planner again
+new model context
+  ↓
+model again
   ↓
 finish / fail / continue
-```
+~~~
 
-The planner in this repository is deterministic. The architecture around it is the interesting part.
+The important point is that the model proposes what should happen next, while the runtime controls what is actually allowed to happen.
 
 ## Why this repository exists
 
-A lot of introductory agent examples reduce the idea to:
+Many introductory agent examples reduce the idea to:
 
-```python
+~~~python
 while not done:
     action = llm(...)
     tool_result = tool(action)
-```
+~~~
 
 That is a useful sketch, but it leaves several engineering questions unanswered:
 
-- What does the agent remember?
-- How does the next action depend on previous observations?
+- What context does the model receive?
+- How are observations carried into the next iteration?
 - What happens when a tool fails?
-- What prevents the same tool call from repeating forever?
-- What prevents an agent from creating a side effect when it is not allowed?
-- Where does the execution budget live?
-- How do we evaluate the behavior rather than only the final answer?
+- What happens when the model returns malformed output?
+- What prevents an unknown tool from being executed?
+- What prevents repeated calls or uncontrolled tool usage?
+- Where do side-effect permissions live?
+- How can the execution be inspected and evaluated?
 
-This project keeps those questions in the code.
+This project keeps those boundaries in code.
 
 ## The example problem
 
@@ -79,99 +90,27 @@ Policy data is part of the same environment:
 | standard | 3 | 2 |
 | express | 2 | 1 |
 
-This is deliberately small, but it is not a fixed sequence of calls. Different evidence produces different behavior.
+Different evidence produces different paths.
 
-## The important difference: the path can change
+## The model boundary
 
-For order `O-1002`, the initial state is roughly:
+The project separates the **model interface** from the **agent runtime**.
 
-```text
-task = customer C-02, order O-1002
-
-memory = empty
-observations = empty
-tool calls = empty
-```
-
-The planner cannot decide whether to escalate yet.
-
-So it selects:
-
-```text
-get_order
-```
-
-The order observation adds:
-
-```text
-shipping_method = express
-tracking_id = T-7002
-actual_days = 4
-```
-
-That changes the state.
-
-The planner sees the new state and chooses:
-
-```text
-get_tracking
-```
-
-The tracking observation changes the available evidence again.
-
-Then the planner chooses:
-
-```text
-get_shipping_policy
-```
-
-Only after the policy is known can it calculate the relevant delay.
-
-Because the order is late, it performs another information-gathering step:
-
-```text
-get_customer_history
-```
-
-The history is clean, so the planner now permits a side effect:
-
-```text
-create_escalation
-```
-
-After that tool succeeds, the next decision is to stop.
-
-The key idea is:
-
-> **The next action is a function of the current state, not just the task.**
-
-That is what makes the loop agent-like.
-
-## The model/runtime boundary
-
-The most important architectural boundary is:
-
-```text
-Model context
+~~~text
+ModelContext
     ↓
-Planner / model
+MockLLM / future real model
     ↓
-Structured Decision
+raw text response
     ↓
-Runtime validation + guardrails
+ModelOutputParser
     ↓
-Tool
+Decision
     ↓
-Observation
-    ↓
-State + memory update
-    ↓
-New model context
-```
+Agent runtime
+~~~
 
-The deterministic planner is deliberately shaped like a model boundary. A future LLM planner could produce the same `Decision` structure without changing the core runtime.
-
-At each step the planner receives:
+The model receives:
 
 - the original goal,
 - current working memory,
@@ -179,21 +118,117 @@ At each step the planner receives:
 - available tool descriptions and required arguments,
 - runtime constraints such as remaining tool-call budget.
 
-The planner does **not** execute tools directly. The runtime resolves, validates, authorizes, executes, and records the requested tool call.
+The model does not execute tools directly.
 
-## The runtime pieces
+### MockLLM
 
-### Task
+MockLLM simulates the response boundary of an LLM.
 
-`AgentTask` is the goal plus the identifiers required to start the investigation.
+For a normal step it may produce:
 
-A task is not the same thing as state.
+~~~json
+{
+  "action": "tool",
+  "arguments": {
+    "order_id": "O-1002",
+    "customer_id": "C-02"
+  },
+  "reason": "I need verified order data before I can investigate the shipment.",
+  "tool_name": "get_order"
+}
+~~~
 
-The task stays stable while state accumulates evidence.
+ModelOutputParser converts that text into the structured Decision used by the runtime.
 
-### State
+The simulator is deliberately deterministic. Its decision policy is based on the same reproducible support-planning logic used by the baseline SupportPlanner.
 
-`AgentState` represents one execution.
+This means:
+
+~~~text
+realistic boundary
+        +
+deterministic behavior
+        =
+inspectable laboratory
+~~~
+
+MockLLM also supports raw response overrides so tests can simulate malformed model responses without requiring a real API.
+
+For example:
+
+~~~text
+raw model response
+        ↓
+invalid JSON
+        ↓
+parser failure
+        ↓
+safe agent failure
+~~~
+
+The repository therefore demonstrates an important principle:
+
+> **Model output is untrusted input to the runtime.**
+
+## The runtime
+
+Agent is the execution runtime around the model.
+
+At every iteration it:
+
+1. builds a fresh ModelContext,
+2. asks the planner/model adapter for a decision,
+3. records the raw model response when one exists,
+4. validates the structured decision,
+5. checks runtime guardrails,
+6. executes the selected tool,
+7. stores the observation,
+8. updates working memory,
+9. repeats.
+
+This creates the boundary:
+
+~~~text
+what the model proposes
+        ≠
+what the runtime permits
+~~~
+
+## Planner roles
+
+There are two useful planner forms in the repository.
+
+### SupportPlanner
+
+SupportPlanner is the deterministic baseline.
+
+It directly produces a structured Decision from ModelContext.
+
+It is useful as the simplest reference implementation of model-side decision logic.
+
+### MockLLMPlanner
+
+MockLLMPlanner adds the model-response boundary:
+
+~~~text
+ModelContext
+    ↓
+MockLLM
+    ↓
+JSON text
+    ↓
+ModelOutputParser
+    ↓
+Decision
+~~~
+
+The agent runtime does not need to know whether the decision came from the deterministic baseline or from the simulated model protocol.
+
+That separation makes a future real LLM adapter possible without rewriting the runtime.
+
+## State and memory
+
+AgentState represents one execution.
 
 It stores:
 
@@ -202,127 +237,90 @@ It stores:
 - working memory,
 - normalized tool-call history.
 
-Every tool result changes what the planner can know.
+WorkingMemory is intentionally small and short-lived.
 
-### Working memory
+For example:
 
-`WorkingMemory` is intentionally simple.
-
-It stores the facts that successful observations make available:
-
-```text
+~~~text
 order_id = O-1002
 tracking_id = T-7002
 shipping_method = express
 actual_days = 4
 allowed_days = 2
 recent_escalations = 0
-```
+~~~
 
-This is short-term working memory.
+Observations are not discarded after a tool call. They become part of the next model context.
 
-It is not a vector store and it is not meant to represent long-term user memory.
+## Tools
 
-The important concept is that observations are not thrown away after a tool call.
+The planner chooses named capabilities:
 
-### Planner
-
-`SupportPlanner` is a deterministic stand-in for the decision-making part of an LLM. It chooses one of:
-
-```text
-tool
-finish
-fail
-```
-
-The planner is deliberately deterministic.
-
-That lets us answer:
-
-> What does the runtime do around the planner?
-
-without first having to answer:
-
-> Why did the model generate this text?
-
-A real LLM can replace the planner later.
-
-### Tool registry
-
-The agent does not call Python classes directly from the planner.
-
-The planner chooses a named capability:
-
-```text
+~~~text
 get_order
 get_tracking
 get_shipping_policy
 get_customer_history
 create_escalation
-```
+~~~
 
-The registry resolves that name to a tool implementation.
+ToolRegistry resolves the name to an implementation and exposes structured ToolSpec metadata.
 
-That boundary matters because it is where a real system can later add:
+Each tool declares whether it is read-only and which arguments it requires.
 
-- schemas,
+This is the place where a larger system could later add:
+
 - authentication,
 - permissions,
+- schemas,
 - rate limits,
 - timeouts,
 - telemetry,
 - tool versioning.
 
-### Observations
+## Guardrails
 
-A tool returns an `Observation`.
+The model is not trusted blindly.
 
-An observation says:
+The runtime checks:
 
-```text
-who produced the information
-whether it succeeded
-what values were learned
-what error occurred, if any
-```
+### Tool existence
 
-The planner consumes observations on the next iteration.
+An unknown tool name is rejected before execution.
 
-This creates a clean separation:
+### Argument shape
 
-```text
-decision → action → observation → new state
-```
+Missing and unexpected arguments are rejected before execution.
 
-### Side effects
+### Side-effect policy
 
-Not every tool is read-only.
+create_escalation is mutating.
 
-`create_escalation` modifies the demo environment.
+The runtime can be run with:
 
-The runtime therefore knows whether a tool is read-only:
+~~~python
+allow_side_effects=False
+~~~
 
-```text
-read tool
-    ↓
-safe to execute normally
+The model may still request the action, but the runtime refuses to perform it.
 
-side-effecting tool
-    ↓
-subject to runtime policy
-```
+### Repeated calls
 
-This is a small but useful distinction. In a real agent, sending an email, changing a record, placing an order, or deploying code should not be treated exactly like reading a document.
+The runtime tracks normalized tool calls and stops an identical call from repeating indefinitely.
+
+### Tool-call budget
+
+A separate tool-call budget limits how many tool executions may occur during a run.
+
+### Step limit
+
+A maximum step count is the final protection against an infinite loop.
 
 ## Branching behavior
 
-The demo intentionally contains several paths.
+For O-1002:
 
-### Late enough to escalate
-
-For `O-1002`:
-
-```text
+~~~text
 get order
   ↓
 get tracking
@@ -334,15 +332,11 @@ get customer history
 create escalation
   ↓
 finish
-```
+~~~
 
-The agent gathers evidence before taking the side effect.
+For O-1003:
 
-### Within policy
-
-For `O-1003`:
-
-```text
+~~~text
 get order
   ↓
 get tracking
@@ -350,17 +344,11 @@ get tracking
 get policy
   ↓
 finish
-```
+~~~
 
-The agent does not call customer history because it has no reason to consider an escalation.
+For O-1004:
 
-It also does not call the escalation tool simply because that tool is available.
-
-### Recent escalation
-
-For `O-1004`:
-
-```text
+~~~text
 get order
   ↓
 get tracking
@@ -370,15 +358,11 @@ get policy
 get customer history
   ↓
 finish → manual review
-```
+~~~
 
-The agent stops instead of creating a duplicate escalation.
+For O-1005:
 
-### Late but below threshold
-
-For `O-1005`:
-
-```text
+~~~text
 get order
   ↓
 get tracking
@@ -388,206 +372,91 @@ get policy
 get customer history
   ↓
 finish → no escalation yet
-```
+~~~
 
-The system has enough information to know the shipment is late, but not enough reason to take the strongest action.
+The next action depends on the state built from previous evidence.
 
-This is an important pattern in agent design:
+## Failure is a behavior
 
-> More information does not necessarily mean more actions.
+The project includes a case where tracking information is unavailable.
 
-## Guardrails are part of the agent system
+The flow becomes:
 
-The planner is not trusted blindly.
+~~~text
+tool failure
+  ↓
+failed observation
+  ↓
+model sees missing evidence
+  ↓
+safe failure
+~~~
 
-The runtime checks:
+The project also tests malformed model output:
 
-### Tool existence
+~~~text
+MockLLM
+  ↓
+malformed response
+  ↓
+parser rejects it
+  ↓
+agent stops safely
+~~~
 
-A planner can name a capability that is not registered.
+This distinction matters because an agent should not turn missing or malformed information into a confident action.
 
-The runtime turns that into a controlled failure instead of an exception escaping into the program.
-
-### Side-effect policy
-
-The same agent can be run with:
-
-```python
-allow_side_effects=False
-```
-
-Then the planner may still decide that escalation is appropriate, but the runtime refuses to execute the mutating tool.
-
-This models a useful real-world separation:
-
-```text
-What the planner wants
-        ≠
-What the runtime permits
-```
-
-### Repeated calls
-
-A planner stuck in a loop can repeatedly choose the exact same tool and arguments.
-
-The state records normalized tool calls.
-
-If the same call is attempted again, the runtime stops the run.
-
-### Tool-call budget
-
-The runtime also has a maximum tool-call count.
-
-This is separate from the step limit.
-
-That distinction matters because a future agent could perform several non-tool decisions between tool calls, and production systems often need more than one bound.
-
-### Step limit
-
-A maximum number of reasoning/acting steps is the final escape hatch.
-
-It prevents an agent from running forever even when the planner makes no useful progress.
-
-## Why the trace matters
+## Trace
 
 A normal function often gives you:
 
-```text
+~~~text
 input → output
-```
+~~~
 
 An agent needs a trace:
 
-```text
-decision
-action
+~~~text
+context
+model_response
+model_output
+tool_call
 observation
-decision
-action
+context
+model_response
+model_output
+tool_call
 observation
 ...
-```
+~~~
 
-The demo prints this trace so you can see where each new piece of evidence entered the run.
+For example, the trace can expose the transition:
 
-For `O-1002`, the important shape is:
-
-```text
-[1] decision
-[1] action
+~~~text
+[1] context
+[1] model_response
+[1] model_output
+[1] tool_call
 [1] observation
 
-[2] decision
-[2] action
+[2] context
+[2] model_response
+[2] model_output
+[2] tool_call
 [2] observation
+~~~
 
-[3] decision
-[3] action
-[3] observation
+The raw response and parsed decision are intentionally separate trace events.
 
-...
-```
-
-The trace is also useful for evaluation and debugging.
-
-If an agent eventually makes a wrong decision, the trace lets us ask:
-
-- Did it retrieve the wrong fact?
-- Did it skip a needed tool?
-- Did it misunderstand the observation?
-- Did a guardrail block the action?
-- Did it terminate too early?
-
-## What the LLM would change
-
-The LLM would primarily change the planner.
-
-Today:
-
-```text
-Agent
-  ├── deterministic planner
-  ├── state
-  ├── memory
-  ├── tools
-  └── runtime guardrails
-```
-
-A future version could become:
-
-```text
-Agent
-  ├── LLM planner
-  ├── state
-  ├── memory
-  ├── tool registry
-  ├── validation
-  ├── runtime guardrails
-  └── trace / evaluation
-```
-
-The LLM would decide among tool calls and final responses.
-
-The rest of the system would still be necessary.
-
-This is why it is useful to separate:
-
-```text
-model capability
-from
-agent runtime
-```
-
-## What an LLM-backed iteration might look like
-
-A simplified planner prompt could contain:
-
-```text
-Goal:
-  Investigate shipment O-1002.
-
-Current state:
-  shipping_method = express
-  actual_days = 4
-  tracking_status = in_transit
-
-Available tools:
-  get_customer_history(customer_id)
-  create_escalation(order_id, reason)
-
-Choose exactly one next action.
-```
-
-The model might return:
-
-```text
-get_customer_history(customer_id=C-02)
-```
-
-The runtime would still:
-
-1. validate that the tool exists,
-2. validate the arguments,
-3. check whether it is permitted,
-4. execute it,
-5. store the observation,
-6. call the planner again.
-
-The model supplies flexible planning.
-
-The runtime supplies control.
+That makes the model/runtime boundary inspectable instead of implicit.
 
 ## Evaluation
 
 The repository includes a small deterministic evaluator.
 
-The demo contains expected scenarios and checks whether the observed result matches each scenario.
+The flow is:
 
-This is intentionally simple.
-
-The point is to establish the evaluation boundary:
-
-```text
+~~~text
 scenario
   ↓
 agent run
@@ -597,9 +466,9 @@ trace + result
 expected outcome
   ↓
 evaluation
-```
+~~~
 
-A production evaluation suite could add measurements such as:
+A production evaluation suite could later measure:
 
 - unnecessary tool calls,
 - invalid tool arguments,
@@ -609,31 +478,11 @@ A production evaluation suite could add measurements such as:
 - cost,
 - final-answer quality.
 
-The important idea is that an agent should be evaluated as a system.
-
-## Failure is also a behavior
-
-The project includes a case where tracking information is unavailable.
-
-The agent does not invent a tracking result.
-
-Instead:
-
-```text
-tool failure
-  ↓
-failed observation
-  ↓
-planner sees missing evidence
-  ↓
-safe failure
-```
-
-This matters because an agent should not turn missing evidence into confident action.
+The point is to evaluate the agent as a system, not only to inspect its final message.
 
 ## Project structure
 
-```text
+~~~text
 HowAgentsWork/
 ├── .github/
 │   └── workflows/
@@ -649,6 +498,7 @@ HowAgentsWork/
 │       ├── evaluation.py
 │       ├── main.py
 │       ├── memory.py
+│       ├── model.py
 │       ├── models.py
 │       ├── planner.py
 │       └── tools.py
@@ -656,9 +506,10 @@ HowAgentsWork/
     ├── test_agent.py
     ├── test_evaluation.py
     ├── test_memory.py
+    ├── test_model.py
     ├── test_planner.py
     └── test_tools.py
-```
+~~~
 
 ## Running the project
 
@@ -666,43 +517,29 @@ Python 3.11 or newer is required.
 
 Create a virtual environment:
 
-```bash
+~~~bash
 python -m venv .venv
-```
+~~~
 
 Activate it, then install the project and test dependency:
 
-```bash
+~~~bash
 python -m pip install -e ".[dev]"
-```
+~~~
 
 Run the demo:
 
-```bash
+~~~bash
 python -m how_agents_work
-```
+~~~
 
 Run the tests:
 
-```bash
+~~~bash
 pytest
-```
+~~~
 
-Runtime dependencies are limited to the Python standard library. `pytest` is a development dependency.
-
-## Why the data is fixed
-
-A networked example would make the demo depend on things that are not the point:
-
-- external availability,
-- credentials,
-- API changes,
-- network latency,
-- provider differences.
-
-Fixed data gives us a stable laboratory for the control loop.
-
-The environment can later be replaced without changing the conceptual architecture.
+Runtime dependencies are limited to the Python standard library. pytest is a development dependency.
 
 ## What this project intentionally does not include
 
@@ -710,6 +547,7 @@ This repository is not a production agent framework.
 
 It does not attempt to solve:
 
+- training or serving a neural network,
 - prompt engineering,
 - model selection,
 - RAG,
@@ -722,22 +560,24 @@ It does not attempt to solve:
 - streaming,
 - deployment orchestration.
 
-Those are separate layers.
+MockLLM is a deterministic simulation of the **model interface**, not a trained language model.
 
-The focus here is narrower:
+The focus is narrower:
 
-> **Understand how an agent turns observations into its next action, while remaining bounded and inspectable.**
+> **Understand how a model, runtime, tools, state, memory, and guardrails cooperate during an agent execution.**
 
 ## The mental model to keep
 
-A useful way to remember the architecture is:
-
-```text
+~~~text
 Goal
   ↓
 Model Context
   ↓
-Model / Planner
+Model / MockLLM
+  ↓
+Raw Model Response
+  ↓
+Parser
   ↓
 Decision
   ↓
@@ -752,9 +592,9 @@ State + Memory
 New Model Context
   ↓
 Repeat
-```
+~~~
 
-The model can be deterministic for this project or replaced by an LLM later.
+The model can be deterministic in this project or replaced by a real model adapter later.
 
 The tools can be swapped.
 
