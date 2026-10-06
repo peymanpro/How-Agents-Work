@@ -178,11 +178,16 @@ class Agent:
 
     @staticmethod
     def _format_decision(decision: Decision) -> str:
+        confidence = (
+            f", confidence={decision.confidence:.2f}"
+            if decision.confidence is not None
+            else ""
+        )
         if decision.action != "tool":
-            return f"{decision.action}: {decision.message or decision.reason}"
+            return f"{decision.action}: {decision.message or decision.reason}{confidence}"
         return (
             f"tool_call={decision.tool_name}("
-            f"{Agent._format_arguments(decision.arguments)})"
+            f"{Agent._format_arguments(decision.arguments)}){confidence}"
         )
 
     @staticmethod

@@ -1,7 +1,7 @@
 from .agent import Agent
 from .data import build_demo_system
 from .evaluation import EvaluationCase, evaluate
-from .model import MockLLM, MockLLMPlanner
+from .model import MockLLM, MockLLMPlanner, OpenEndedMockLLM
 from .models import AgentTask
 from .planner import SupportPlanner
 from .tools import (
@@ -88,6 +88,30 @@ def main() -> None:
 
     passed, total = evaluate(results)
     print(f"Evaluation: {passed}/{total} scenarios matched their expected outcome.")
+    print()
+    print("Open-ended model simulation")
+    print("===========================")
+    print(
+        "The next decisions are sampled from tool relevance rather than a "
+        "shipment-specific planner."
+    )
+
+    task = AgentTask(
+        "C-02",
+        "O-1002",
+        request="Investigate this shipment and gather the most relevant evidence before deciding what to do.",
+    )
+    for seed in (1, 7):
+        open_model = OpenEndedMockLLM(seed=seed, temperature=0.9)
+        open_agent = build_agent(
+            allow_side_effects=False,
+            planner=MockLLMPlanner(open_model),
+        )
+        open_result = open_agent.run(task)
+        first_model = next(
+            entry for entry in open_result.trace if entry.kind == "model_output"
+        )
+        print(f"  seed={seed}: {first_model.detail}")
 
 
 if __name__ == "__main__":
