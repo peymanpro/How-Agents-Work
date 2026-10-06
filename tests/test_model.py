@@ -1,7 +1,7 @@
 import json
 
-from how_agents_work.model import MockLLM, MockLLMPlanner, ModelOutputParser, OpenEndedMockLLM
-from how_agents_work.models import AgentState, Decision, AgentTask, ToolSpec
+from how_agents_work.model import MockLLM, MockLLMPlanner, ModelOutputParser, OpenEndedMockLLM, OpenEndedMockLLM
+from how_agents_work.models import AgentState, Decision, AgentTask, ToolSpec, ToolSpec
 
 
 def build_context():
