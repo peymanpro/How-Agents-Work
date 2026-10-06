@@ -4,7 +4,7 @@
   <img src="docs/agent-execution-cycle.svg" alt="Animated overview of the How Agents Work execution loop" width="100%" />
 </p>
 
-A small Python project for understanding how an agent works as a **system around a model boundary**.
+An agent execution laboratory for understanding model/runtime boundaries, tool calls, state, memory, guardrails, and iterative agent loops.
 
 > This repository is an **agent execution laboratory**, not a production agent framework.
 
